@@ -13,6 +13,7 @@
 #include <QGLViewer/qglviewer.h>
 #include <string>
 #include <sstream>
+#include <iostream>
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -65,9 +66,16 @@ private:
     void loadDataset();
     void computeEssentialStatistics(const Ekernel& kernel, const Matrix3f &E);
     void clear();
+    /**
+     * 返回从右图坐标系到左图坐标系的变换
+     * left_pose_是左图世界坐标系下坐标
+     * right_pose_是右图世界坐标系下坐标
+     */
     Sophus::SE3f pose() {
-        return left_pose_.inverse() * right_pose_;
+      Sophus::SE3f pose_ =  right_pose_.inverse() * left_pose_;
+      return pose_;
     }
+
     ostream& info() {
         return info_;
     }
@@ -90,6 +98,7 @@ private:
     stringstream info_;
     Sophus::SE3f left_pose_;
     Sophus::SE3f right_pose_;
+    IOFormat mfmt_;
 };
 
 #endif // MAINWINDOW_H

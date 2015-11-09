@@ -2,10 +2,12 @@
 #include "ui_qMVG.h"
 #include "mvg_motion.h"
 #include <Eigen/Geometry>
+#include <iostream>
 
 using namespace carrotslam;
 using namespace Eigen;
 using namespace Sophus;
+using namespace std;
 
 
 QImage* Mat2QImage(cv::Mat const& src)
@@ -77,7 +79,8 @@ void setQLabel(QLabel* lbl, const Mat& image, Mat& lblImage) {
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow)
+    ui(new Ui::MainWindow),
+    mfmt_(FullPrecision, 0, ", ", ";", "", "", "[", "]")
 {
     ui->setupUi(this);
     connect(ui->actionOpen_Dataset, SIGNAL(triggered()), this, SLOT(selectTumDataset()));
@@ -325,18 +328,16 @@ void MainWindow::computeEssentialStatistics(const Ekernel& kernel, const Matrix3
 
     for (size_t j=0; j<inliers.size(); j++){
         Vector3f X;
-        triangulate(p1, kernel.x1_.col(inliers[j]), p2, kernel.x1_.col(inliers[j]), X);
-
-        errors[j] = (p1 * X.homogeneous()).colwise().hnormalized().squaredNorm() +
-                (p2 * X.homogeneous()).colwise().hnormalized().squaredNorm() - 2;
+        triangulate(p1, kernel.x1_.col(inliers[j]), p2, kernel.x2_.col(inliers[j]), X);
+        errors.push_back(((p1 * X.homogeneous()).colwise().hnormalized().topRows(2)-kernel.x1_.col(inliers[j])).squaredNorm() +
+                ((p2 * X.homogeneous()).colwise().hnormalized().topRows(2)-kernel.x2_.col(inliers[j])).squaredNorm());
     }
 
     sort(errors.begin(), errors.end());
     float total_errors = std::accumulate(errors.begin(), errors.end(), 0);
-    info() << "inliers: " << inliers.size() << endl;
-    info() << "min_residual: " << errors[0] << endl;
-    info() << "max_residual: " << errors[errors.size()-1] << endl;
-    info() << "mean_residual: " << total_errors / errors.size() << endl;
+    info() << "inliers: " << inliers.size();
+    info() << "\t project residual: min/median/max = " << errors[0] << "/" << errors[round(0.5*errors.size())] << "/" << errors[errors.size()-1] << endl;
+    info() << "R: " << R.format(mfmt_) << " t: " << t.format(mfmt_) << endl;
 }
 
 void MainWindow::computeEssential() {
@@ -362,17 +363,17 @@ void MainWindow::computeEssential() {
 
         Matrix3f E = carrotslam::RANSAC(ekernel, ScorerEvaluator<Ekernel>(thres), &inliers_, &best_score);
         //Matrix3f E = carrotslam::RANSAC(ekernel, ScorerEvaluator<Ekernel>(thres), &inliers_);
-        info() << "estimatie essential matrix using threshold value:" << thres << endl;
+        info() << "estimate essential matrix using threshold value:" << thres << endl;
         info() << "score: " << best_score
-               << "\tE: " << E.row(0) << "; " << E.row(1) << "; " << E.row(2) << endl;
+               << "\tE: " << E.format(mfmt_) << endl;
 
         showMatches();
 
+        info() << "estimated↠ ";
         computeEssentialStatistics(ekernel, E);
 
-        cout << pose().matrix() << endl;
         if (pose().translation() != Vector3f::Zero()) {
-            info() << "ground truth" << endl;
+            info() << "ground truth↠ ";
             Matrix3f gtE;
 
             essentialFromMotion(gtE, pose().rotationMatrix(), pose().translation());
@@ -390,8 +391,6 @@ void MainWindow::clear() {
     left_desp_ = Mat();
     right_desp_ = Mat();
     inliers_.clear();
-    left_pose_ = SE3f();
-    right_pose_ = SE3f();
 }
 
 MainWindow::~MainWindow()
