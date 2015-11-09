@@ -55,7 +55,7 @@ class TUMDatasetReader {
     std::string filename;
   };
 
-  Sophus::SE3d groundTruth(int idx);
+
  public:
   /*!
    the constructor of image
@@ -66,7 +66,7 @@ class TUMDatasetReader {
   ~TUMDatasetReader(){
   };
 
-
+  Sophus::SE3d groundTruth(int idx);
  public:
   std::vector<TUMDatasetImageLine> rgb_dataset_;
   std::vector<TUMDatasetImageLine> depth_dataset_;

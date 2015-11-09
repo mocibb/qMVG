@@ -63,8 +63,11 @@ private:
     void findMatches();
     void showMatches();
     void loadDataset();
-    void computeEssentialStatistics();
+    void computeEssentialStatistics(const Ekernel& kernel, const Matrix3f &E);
     void clear();
+    Sophus::SE3f pose() {
+        return left_pose_.inverse() * right_pose_;
+    }
     ostream& info() {
         return info_;
     }
@@ -85,6 +88,8 @@ private:
     cv::Mat right_desp_;
     std::vector<size_t> inliers_;
     stringstream info_;
+    Sophus::SE3f left_pose_;
+    Sophus::SE3f right_pose_;
 };
 
 #endif // MAINWINDOW_H

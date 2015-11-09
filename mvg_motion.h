@@ -47,12 +47,12 @@ void essentialFromMotion(Eigen::Matrix3f &E, const Eigen::Matrix3f &R, const Eig
  *
  */
 bool decomposeEssential(const Eigen::Matrix3f &E, const Eigen::Matrix3f &K1,
-                        const std::vector<Eigen::Vector2f> *x1,
+                        const Eigen::MatrixXf *x1,
                         const Eigen::Matrix3f &K2,
-                        const std::vector<Eigen::Vector2f> *x2,
+                        const Eigen::MatrixXf *x2,
                         Eigen::Matrix3f &R, Eigen::Vector3f &t) {
   std::vector<Eigen::Matrix3f> Rs;
-  std::vector<Eigen::Matrix3f> ts;
+  std::vector<Eigen::Vector3f> ts;
 
   Eigen::JacobiSVD<Eigen::Matrix3f> USV(
       E, Eigen::ComputeFullU | Eigen::ComputeFullV);
@@ -94,8 +94,8 @@ bool decomposeEssential(const Eigen::Matrix3f &E, const Eigen::Matrix3f &K1,
     P2.block<3, 3>(0, 0) = Rs[i];
     P2.block<3, 1>(0, 3) = ts[i];
     P2 = K2 * P2;
-    for (int j = 0; j < x1->size(); j++) {
-      triangulate(P1, (*x1)[j], P2, (*x2)[j], X);
+    for (int j = 0; j < x1->cols(); j++) {
+      triangulate(P1, x1->col(j), P2, x2->col(j), X);
 
       // Test if point is front to the two cameras (positive depth)
       if (X[2] > 0 && (Rs[i] * X + ts[i])[2] > 0) {

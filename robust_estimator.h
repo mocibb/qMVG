@@ -81,7 +81,7 @@ template<typename Kernel, typename Scorer>
 typename Kernel::Model RANSAC(const Kernel &kernel, const Scorer &scorer,
                               std::vector<size_t> *best_inliers = NULL,
                               float *best_score = NULL,
-                              float outliers_probability = 1e-2,
+                              float outliers_probability = .01f,
                               size_t really_max_iterations = 4096) {
   assert(outliers_probability < 1.0);
   assert(outliers_probability > 0.0);

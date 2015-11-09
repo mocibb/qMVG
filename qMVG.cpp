@@ -1,8 +1,11 @@
 #include "qMVG.h"
 #include "ui_qMVG.h"
+#include "mvg_motion.h"
+#include <Eigen/Geometry>
 
 using namespace carrotslam;
 using namespace Eigen;
+using namespace Sophus;
 
 
 QImage* Mat2QImage(cv::Mat const& src)
@@ -154,6 +157,9 @@ void MainWindow::loadLeftImage() {
     QModelIndexList idx = ui->ds_list->selectionModel()->selectedIndexes();
     if (idx.size() == 1) {
         left_img_ = imread(img_dir_+"/"+smodel->itemFromIndex(idx[0])->text().toStdString());
+        if (tum_reader_ != nullptr) {
+            left_pose_ = tum_reader_->groundTruth(idx[0].row()).cast<float>();
+        }
         loadImage();
     }
 }
@@ -163,6 +169,9 @@ void MainWindow::loadRightImage(){
     QModelIndexList idx = ui->ds_list->selectionModel()->selectedIndexes();
     if (idx.size() == 1) {
         right_img_ = imread(img_dir_+"/"+smodel->itemFromIndex(idx[0])->text().toStdString());
+        if (tum_reader_ != nullptr) {
+            right_pose_ = tum_reader_->groundTruth(idx[0].row()).cast<float>();
+        }
         loadImage();
     }
 }
@@ -249,7 +258,7 @@ void MainWindow::showMatches() {
 
     sort(inliers_.begin(), inliers_.end());
     Scalar outlier(0,0,255), inlier(0, 255, 0);
-    int j = 0;
+    size_t j = 0;
     for (size_t i = 0; i < matches_.size(); i++) {
         if (ui->showLeft->isChecked()) {
             drawKeypoint(img, left_features_[matches_[i].queryIdx]);
@@ -288,12 +297,46 @@ void MainWindow::computeMatches() {
     }
 }
 
-void MainWindow::computeEssentialStatistics() {
+void MainWindow::computeEssentialStatistics(const Ekernel& kernel, const Matrix3f &E) {
     float thres = this->ui->ransacThres->value() / 100.f;
     //内点数
-    //Ekernel::ErrorArg
-    //投影误差
+    int total_samples = kernel.numSamples();
+    std::vector<size_t> all_samples(total_samples);
+    std::vector<size_t> inliers;
+    std::iota(all_samples.begin(), all_samples.end(), 0);
+    ScorerEvaluator<Ekernel> scorer(thres);
+    scorer.score(kernel, E, &all_samples, &inliers);
+    //分解E
+    Matrix3f R;
+    Vector3f t;
 
+    decomposeEssential(E, tum_reader_->K_, &(kernel.x1_), tum_reader_->K_, &(kernel.x2_), R, t);
+    //投影误差
+    vector<float> errors;
+    errors.reserve(inliers.size());
+    MatrixP p1;
+    MatrixP p2;
+    p1 = MatrixP::Zero();
+    p1.block<3, 3>(0, 0) = Eigen::Vector3f::Ones().asDiagonal();
+    p1 = tum_reader_->K_ * p1;
+    p2.block<3, 3>(0, 0) = R;
+    p2.block<3, 1>(0, 3) = t;
+    p2 = tum_reader_->K_ * p2;
+
+    for (size_t j=0; j<inliers.size(); j++){
+        Vector3f X;
+        triangulate(p1, kernel.x1_.col(inliers[j]), p2, kernel.x1_.col(inliers[j]), X);
+
+        errors[j] = (p1 * X.homogeneous()).colwise().hnormalized().squaredNorm() +
+                (p2 * X.homogeneous()).colwise().hnormalized().squaredNorm() - 2;
+    }
+
+    sort(errors.begin(), errors.end());
+    float total_errors = std::accumulate(errors.begin(), errors.end(), 0);
+    info() << "inliers: " << inliers.size() << endl;
+    info() << "min_residual: " << errors[0] << endl;
+    info() << "max_residual: " << errors[errors.size()-1] << endl;
+    info() << "mean_residual: " << total_errors / errors.size() << endl;
 }
 
 void MainWindow::computeEssential() {
@@ -314,13 +357,27 @@ void MainWindow::computeEssential() {
         }
 
         float thres = this->ui->ransacThres->value() / 100.f;
+        float best_score;
         Ekernel ekernel(x1, x2, tum_reader_->K_, tum_reader_->K_);
 
-        Matrix3f E = carrotslam::RANSAC(ekernel, ScorerEvaluator<Ekernel>(thres), &inliers_);
+        Matrix3f E = carrotslam::RANSAC(ekernel, ScorerEvaluator<Ekernel>(thres), &inliers_, &best_score);
+        //Matrix3f E = carrotslam::RANSAC(ekernel, ScorerEvaluator<Ekernel>(thres), &inliers_);
         info() << "estimatie essential matrix using threshold value:" << thres << endl;
-        info() << "E: " << E.row(0) << "; " << E.row(1) << "; " << E.row(2);
+        info() << "score: " << best_score
+               << "\tE: " << E.row(0) << "; " << E.row(1) << "; " << E.row(2) << endl;
 
         showMatches();
+
+        computeEssentialStatistics(ekernel, E);
+
+        cout << pose().matrix() << endl;
+        if (pose().translation() != Vector3f::Zero()) {
+            info() << "ground truth" << endl;
+            Matrix3f gtE;
+
+            essentialFromMotion(gtE, pose().rotationMatrix(), pose().translation());
+            computeEssentialStatistics(ekernel, gtE);
+        }
 
         writeOut();
     }
@@ -333,6 +390,8 @@ void MainWindow::clear() {
     left_desp_ = Mat();
     right_desp_ = Mat();
     inliers_.clear();
+    left_pose_ = SE3f();
+    right_pose_ = SE3f();
 }
 
 MainWindow::~MainWindow()
